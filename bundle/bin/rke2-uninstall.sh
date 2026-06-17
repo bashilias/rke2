@@ -80,6 +80,22 @@ uninstall_disable_services()
     fi
 }
 
+# remove RKE2's CNI plugins from the shared /opt/cni/bin but keep any owned by a system package (e.g. kubernetes-cni on Debian)
+remove_cni_bin()
+{
+    [ -d /opt/cni/bin ] && [ ! -L /opt/cni/bin ] || return 0
+    for f in /opt/cni/bin/*; do
+        [ -e "$f" ] || continue
+        if { command -v dpkg-query >/dev/null 2>&1 && dpkg-query -S "$f" >/dev/null 2>&1; } ||
+           { command -v rpm >/dev/null 2>&1 && rpm -qf "$f" >/dev/null 2>&1; }; then
+            log "Keeping package-owned CNI plugin: $f"
+        else
+            rm -rf -- "$f"
+        fi
+    done
+    rmdir /opt/cni/bin 2>/dev/null || true
+}
+
 uninstall_remove_files()
 {
 
@@ -116,7 +132,8 @@ uninstall_remove_files()
     $transactional_update rm -f -- "${INSTALL_RKE2_ROOT}/bin/rke2-killall.sh"
     $transactional_update rm -rf -- "${INSTALL_RKE2_ROOT}/share/rke2"
 
-    rm -rf /etc/rancher/rke2 /etc/rancher/node /etc/cni /opt/cni/bin /var/lib/cni/ /var/log/pods/ /var/log/containers /var/log/calico
+    rm -rf /etc/rancher/rke2 /etc/rancher/node /etc/cni /var/lib/cni/ /var/log/pods/ /var/log/containers /var/log/calico
+    remove_cni_bin
     rm -d /etc/rancher || true
     rm --one-file-system -rf /var/lib/kubelet || true
     rm -rf -- "${RKE2_DATA_DIR}" || error "Failed to remove ${RKE2_DATA_DIR}"
